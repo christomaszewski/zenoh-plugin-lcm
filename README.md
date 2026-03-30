@@ -1,9 +1,9 @@
-<img src="https://raw.githubusercontent.com/eclipse-zenoh/zenoh/main/zenoh-dragon.png" height="150">
-
 [![License](https://img.shields.io/badge/License-EPL%202.0-blue)](https://choosealicense.com/licenses/epl-2.0/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 # Zenoh plugin for LCM
+
+> **Note:** This is a community-maintained project and is not affiliated with or endorsed by the [Zenoh](https://zenoh.io) or [LCM](https://lcm-proj.github.io/) teams.
 
 A [Zenoh](https://zenoh.io) plugin and standalone bridge for [LCM](https://lcm-proj.github.io/) (Lightweight Communications and Marshalling) UDP multicast traffic.
 

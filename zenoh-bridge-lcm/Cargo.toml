@@ -29,8 +29,8 @@ path = "src/main.rs"
 
 [package.metadata.deb]
 name = "zenoh-bridge-lcm"
-maintainer = "zenoh-dev@eclipse.org"
-copyright = "2024 ZettaScale Technology Inc."
+maintainer = "CKT <ckt@users.noreply.github.com>"
+copyright = "2024 CKT"
 section = "net"
 license-file = ["../LICENSE", "0"]
 depends = "$auto"

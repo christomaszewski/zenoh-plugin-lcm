@@ -1,0 +1,192 @@
+name: Check for new Zenoh release
+
+on:
+  schedule:
+    # Run daily at 08:00 UTC
+    - cron: "0 8 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get current pinned version
+        id: current
+        run: |
+          version=$(grep -oP 'tag = "\K[^"]+' Cargo.toml | head -1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Get latest Zenoh release
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=$(gh api repos/eclipse-zenoh/zenoh/releases/latest --jq '.tag_name')
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          if [ "${{ steps.current.outputs.version }}" = "${{ steps.latest.outputs.version }}" ]; then
+            echo "up_to_date=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "up_to_date=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for existing PR or issue
+        if: steps.compare.outputs.up_to_date == 'false'
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          label="zenoh-update"
+          # Check for open PRs or issues with this label
+          open=$(gh pr list --label "$label" --state open --json number --jq 'length')
+          open_issues=$(gh issue list --label "$label" --state open --json number --jq 'length')
+          if [ "$open" -gt 0 ] || [ "$open_issues" -gt 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update Zenoh dependency
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'
+        env:
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+          OLD_VERSION: ${{ steps.current.outputs.version }}
+        run: |
+          # Update tag references in workspace Cargo.toml
+          sed -i "s/tag = \"${OLD_VERSION}\"/tag = \"${NEW_VERSION}\"/g" Cargo.toml
+          # Update zenoh version numbers
+          sed -i "s/version = \"${OLD_VERSION}\"\(.*eclipse-zenoh\)/version = \"${NEW_VERSION}\"\1/g" Cargo.toml
+
+      - name: Update workspace version
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'
+        env:
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+          OLD_VERSION: ${{ steps.current.outputs.version }}
+        run: |
+          # Update workspace package version to match Zenoh
+          sed -i "0,/version = \"${OLD_VERSION}\"/s//version = \"${NEW_VERSION}\"/" Cargo.toml
+          # Update internal crate version references
+          sed -i "s/version = \"${OLD_VERSION}\", path/version = \"${NEW_VERSION}\", path/g" Cargo.toml
+
+      - name: Install Rust
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Update lockfile
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'
+        run: cargo update
+
+      - name: Build
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'
+        id: build
+        continue-on-error: true
+        run: cargo build --workspace 2>&1 | tee /tmp/build.log
+
+      - name: Test
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false' && steps.build.outcome == 'success'
+        id: test
+        continue-on-error: true
+        run: cargo test --workspace 2>&1 | tee /tmp/test.log
+
+      - name: Create labels if missing
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "zenoh-update" --description "Automated Zenoh version bump" --color "0075ca" 2>/dev/null || true
+          gh label create "automated" --description "Created by automation" --color "e4e669" 2>/dev/null || true
+
+      # If build+test pass: open a PR
+      - name: Create PR branch and push
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false' && steps.build.outcome == 'success' && steps.test.outcome == 'success'
+        env:
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+          OLD_VERSION: ${{ steps.current.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          branch="auto/zenoh-${NEW_VERSION}"
+          git checkout -b "$branch"
+          git add -A
+          git commit -m "Bump Zenoh dependency from ${OLD_VERSION} to ${NEW_VERSION}"
+          git push -u origin "$branch"
+
+      - name: Open PR
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false' && steps.build.outcome == 'success' && steps.test.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+          OLD_VERSION: ${{ steps.current.outputs.version }}
+        run: |
+          branch="auto/zenoh-${NEW_VERSION}"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Bump Zenoh ${OLD_VERSION} → ${NEW_VERSION}" \
+            --label "zenoh-update,automated" \
+            --body "$(cat <<'EOF'
+          ## Summary
+          A new Zenoh release (**${{ steps.latest.outputs.version }}**) is available. This PR bumps the dependency from **${{ steps.current.outputs.version }}**.
+
+          - Updated all `eclipse-zenoh/zenoh.git` references to `tag = "${{ steps.latest.outputs.version }}"`
+          - Updated workspace and crate versions to match
+          - Build: :white_check_mark: passing
+          - Tests: :white_check_mark: passing
+
+          > Auto-generated by the [check-zenoh-release](.github/workflows/check-zenoh-release.yml) workflow.
+          EOF
+          )"
+
+      # If build or test fails: open an issue instead
+      - name: Open issue on failure
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false' && (steps.build.outcome == 'failure' || steps.test.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+          OLD_VERSION: ${{ steps.current.outputs.version }}
+        run: |
+          if [ "${{ steps.build.outcome }}" = "failure" ]; then
+            failed_step="Build"
+            log=$(tail -50 /tmp/build.log)
+          else
+            failed_step="Tests"
+            log=$(tail -50 /tmp/test.log)
+          fi
+
+          gh issue create \
+            --title "Zenoh ${NEW_VERSION}: ${failed_step} failed — manual update needed" \
+            --label "zenoh-update,automated" \
+            --body "$(cat <<EOF
+          ## New Zenoh release: ${NEW_VERSION}
+
+          The automated update from **${OLD_VERSION}** to **${NEW_VERSION}** failed during **${failed_step}**.
+
+          <details>
+          <summary>${failed_step} log (last 50 lines)</summary>
+
+          \`\`\`
+          ${log}
+          \`\`\`
+          </details>
+
+          ### Next steps
+          1. Create a branch: \`git checkout -b update/zenoh-${NEW_VERSION}\`
+          2. Update \`Cargo.toml\`: change \`tag = \"${OLD_VERSION}\"\` → \`tag = \"${NEW_VERSION}\"\`
+          3. Run \`cargo update && cargo build --workspace\`
+          4. Fix any breaking changes
+          5. Run \`cargo test --workspace\`
+          6. Open a PR
+
+          > Auto-generated by the [check-zenoh-release](.github/workflows/check-zenoh-release.yml) workflow.
+          EOF
+          )"

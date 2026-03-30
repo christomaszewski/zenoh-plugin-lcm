@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: zenoh-bridge-lcm
+            plugin: libzenoh_plugin_lcm.so
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: zenoh-bridge-lcm
+            plugin: libzenoh_plugin_lcm.so
+          - target: x86_64-apple-darwin
+            os: macos-13
+            binary: zenoh-bridge-lcm
+            plugin: libzenoh_plugin_lcm.dylib
+          - target: aarch64-apple-darwin
+            os: macos-14
+            binary: zenoh-bridge-lcm
+            plugin: libzenoh_plugin_lcm.dylib
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build release
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} dist/
+          cp target/${{ matrix.target }}/release/${{ matrix.plugin }} dist/
+          cp DEFAULT_CONFIG.json5 dist/
+          cp LICENSE dist/
+          cd dist
+          tar czf ../zenoh-bridge-lcm-${{ github.ref_name }}-${{ matrix.target }}.tar.gz *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenoh-bridge-lcm-${{ matrix.target }}
+          path: zenoh-bridge-lcm-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run tests
+        run: cargo test --workspace
+
+  publish:
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Collect all tarballs
+          files=$(find artifacts -name '*.tar.gz' -type f)
+
+          # Extract zenoh version from tag (strip leading 'v')
+          zenoh_version="${GITHUB_REF_NAME#v}"
+
+          gh release create "${{ github.ref_name }}" \
+            --title "zenoh-bridge-lcm ${{ github.ref_name }}" \
+            --generate-notes \
+            --notes "$(cat <<EOF
+          ## zenoh-bridge-lcm ${{ github.ref_name }}
+
+          Compatible with **Zenoh ${zenoh_version}**.
+
+          ### Assets
+          | Platform | Architecture | File |
+          |----------|-------------|------|
+          | Linux | x86_64 | \`zenoh-bridge-lcm-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz\` |
+          | Linux | aarch64 | \`zenoh-bridge-lcm-${{ github.ref_name }}-aarch64-unknown-linux-gnu.tar.gz\` |
+          | macOS | x86_64 | \`zenoh-bridge-lcm-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz\` |
+          | macOS | aarch64 | \`zenoh-bridge-lcm-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz\` |
+
+          Each archive contains:
+          - \`zenoh-bridge-lcm\` — standalone bridge binary
+          - \`libzenoh_plugin_lcm.so\` (or \`.dylib\`) — Zenoh router plugin
+          - \`DEFAULT_CONFIG.json5\` — commented configuration example
+          - \`LICENSE\` — dual EPL-2.0 / Apache-2.0
+          EOF
+          )" \
+            $files

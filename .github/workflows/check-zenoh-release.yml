@@ -78,9 +78,33 @@ jobs:
           # Update internal crate version references
           sed -i "s/version = \"${OLD_VERSION}\", path/version = \"${NEW_VERSION}\", path/g" Cargo.toml
 
+      - name: Get required Rust version
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'
+        id: rust_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          # Read rust-toolchain.toml from the Zenoh release tag to stay in sync
+          channel=$(gh api repos/eclipse-zenoh/zenoh/contents/rust-toolchain.toml?ref=${NEW_VERSION} \
+            --jq '.content' | base64 -d | grep 'channel' | grep -oP '"?\K[0-9]+\.[0-9]+(\.[0-9]+)?"?' | tr -d '"')
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Update rust-toolchain.toml
+        if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'
+        env:
+          RUST_CHANNEL: ${{ steps.rust_version.outputs.channel }}
+        run: |
+          cat > rust-toolchain.toml <<EOF
+          [toolchain]
+          channel = "${RUST_CHANNEL}"
+          EOF
+
       - name: Install Rust
         if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust_version.outputs.channel }}
 
       - name: Update lockfile
         if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false'

@@ -132,6 +132,12 @@ This maps LCM channel `SENSOR_IMU` to Zenoh key `robot1/lcm/SENSOR_IMU`.
 zenoh-bridge-lcm --network-interface 192.168.1.100
 ```
 
+**Use a configuration file:**
+```bash
+zenoh-bridge-lcm -c my_config.json5
+```
+See [`DEFAULT_CONFIG.json5`](DEFAULT_CONFIG.json5) for a fully commented example. CLI arguments override settings from the config file.
+
 **Enable the REST API:**
 ```bash
 zenoh-bridge-lcm --rest-http-port 8000
@@ -202,6 +208,13 @@ The `"lcm"` part of this configuration file can also be used in the configuratio
 - **`--deny <REGEX>`**: A regular expression matching LCM channel names to **not** route. Default: no channels denied. If both `--allow` and `--deny` are set, a channel is allowed only if it matches `--allow` and does not match `--deny`.
 - **`--network-interface <IP>`**: Bind to a specific network interface by IP address for LCM multicast. Useful on multi-homed machines.
 - **`--max-message-size <BYTES>`**: Maximum reassembled LCM message size in bytes. Default: `4194304` (4 MB).
+
+### Plugin-only settings (config file only)
+
+These settings only apply when running as a Zenoh router plugin (not the standalone bridge):
+
+- **`work_thread_num`**: Number of worker threads in the plugin's async runtime. Default: `2`.
+- **`max_block_thread_num`**: Number of blocking threads in the plugin's async runtime. Default: `50`.
 
 ## LCM Wire Protocol
 

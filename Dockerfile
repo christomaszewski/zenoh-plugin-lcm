@@ -2,13 +2,15 @@ FROM rust:1.93-bookworm AS builder
 
 WORKDIR /src
 COPY . .
-RUN cargo build --release --all-targets
+# Build only the bridge binary (not --all-targets, which can cause
+# duplicate crate resolution for the cdylib + rlib plugin crate).
+RUN cargo build --release -p zenoh-bridge-lcm
 
 # ---------- Test stage ----------
 # Build test binaries without running them. Tests are executed
 # via docker-compose command so exit codes propagate correctly.
 FROM builder AS tester
-RUN cargo test --workspace --no-run
+RUN cargo test --workspace --no-run 2>&1
 CMD ["cargo", "test", "--workspace"]
 
 # ---------- Runtime stage ----------

@@ -1,0 +1,114 @@
+////
+//// This file presents the default configuration used by both the `zenoh-plugin-lcm` plugin and the `zenoh-bridge-lcm` standalone executable.
+//// The "lcm" JSON5 object below can be used as such in the "plugins" part of a config file for the zenoh router (zenohd).
+////
+{
+  plugins: {
+    ////
+    //// LCM related configuration
+    //// All settings are optional and are unset by default - uncomment the ones you want to set
+    ////
+    lcm: {
+      ////
+      //// lcm_url: The LCM multicast URL. Default: "udpm://239.255.76.67:7667?ttl=0".
+      ////          Format: udpm://GROUP:PORT?ttl=N&recv_buf_size=M
+      ////          Set ttl=1 for LAN, higher for routed networks. ttl=0 is localhost only.
+      ////
+      // lcm_url: "udpm://239.255.76.67:7667?ttl=1",
+
+      ////
+      //// key_prefix: A string used as prefix for all Zenoh key expressions mapped from LCM channels.
+      ////             LCM channel "FOO" becomes "{key_prefix}/FOO" in Zenoh.
+      ////             Default: "lcm"
+      ////
+      // key_prefix: "lcm",
+
+      ////
+      //// allow: A regular expression matching the LCM channel names that must be routed via Zenoh.
+      ////        By default all channels are allowed.
+      ////        If both 'allow' and 'deny' are set, a channel is allowed only if it matches the
+      ////        'allow' expression and does not match the 'deny' expression.
+      ////
+      // allow: "SENSOR_.*|ROBOT_STATE",
+
+      ////
+      //// deny: A regular expression matching the LCM channel names that must NOT be routed via Zenoh.
+      ////       By default no channels are denied.
+      ////
+      // deny: "DEBUG_.*|TEST_.*",
+
+      ////
+      //// network_interface: Bind to a specific network interface (by IP address) for LCM multicast.
+      ////                    Useful on multi-homed machines. Default: all interfaces.
+      ////
+      // network_interface: "192.168.1.100",
+
+      ////
+      //// max_message_size: Maximum reassembled LCM message size in bytes.
+      ////                   LCM supports messages up to ~4GB via fragmentation, but the bridge
+      ////                   limits reassembly buffer to this value. Default: 4194304 (4 MB).
+      ////
+      // max_message_size: 4194304,
+
+      ////
+      //// This plugin uses Tokio (https://tokio.rs/) for asynchronous programming.
+      //// When running as a plugin within a Zenoh router, the plugin creates its own Runtime.
+      //// When running as a standalone bridge the Zenoh Session's Runtime is used.
+      ////
+
+      //// work_thread_num: The number of worker threads in the async runtime. Default: 2.
+      ////                  Only for plugin mode, no effect on standalone bridge.
+      // work_thread_num: 2,
+
+      //// max_block_thread_num: The number of blocking threads in the async runtime. Default: 50.
+      ////                       Only for plugin mode, no effect on standalone bridge.
+      // max_block_thread_num: 50,
+    },
+
+    ////
+    //// REST API configuration (active only if this part is defined)
+    ////
+    // rest: {
+    //   ////
+    //   //// The HTTP port number (for all network interfaces).
+    //   //// You can bind on a specific interface setting a "<local_ip>:<port>" string.
+    //   ////
+    //   http_port: 8000,
+    // },
+  },
+
+  ////
+  //// zenoh related configuration (see zenoh documentation for more details)
+  ////
+
+  ////
+  //// id: The identifier (as hex-string) that zenoh-bridge-lcm must use. If not set, a random UUIDv4 will be used.
+  //// WARNING: this id must be unique in your zenoh network.
+  // id: "A00001",
+
+  ////
+  //// mode: The bridge's mode (peer or client)
+  ////
+  //mode: "peer",
+
+  ////
+  //// Which endpoints to connect to. E.g. tcp/localhost:7447.
+  //// By configuring the endpoints, it is possible to tell zenoh which router/peer to connect to at startup.
+  ////
+  connect: {
+    endpoints: [
+      // "tcp/192.168.1.10:7447"
+    ]
+  },
+
+  ////
+  //// Which endpoints to listen on. E.g. tcp/localhost:7447.
+  //// By configuring the endpoints, it is possible to tell zenoh which are the endpoints that other routers,
+  //// peers, or client can use to establish a zenoh session.
+  ////
+  listen: {
+    endpoints: [
+      // "tcp/0.0.0.0:7447"
+    ]
+  },
+}

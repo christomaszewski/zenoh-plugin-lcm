@@ -1,0 +1,49 @@
+[package]
+name = "zenoh-bridge-lcm"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+categories = { workspace = true }
+description = "Zenoh bridge for LCM (Lightweight Communications and Marshalling)"
+publish = false
+
+[dependencies]
+clap = { workspace = true }
+futures = { workspace = true }
+lazy_static = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+zenoh = { workspace = true }
+zenoh-config = { workspace = true }
+zenoh-plugin-lcm = { workspace = true }
+zenoh-plugin-rest = { workspace = true }
+zenoh-plugin-trait = { workspace = true }
+
+[[bin]]
+name = "zenoh-bridge-lcm"
+path = "src/main.rs"
+
+[package.metadata.deb]
+name = "zenoh-bridge-lcm"
+maintainer = "zenoh-dev@eclipse.org"
+copyright = "2024 ZettaScale Technology Inc."
+section = "net"
+license-file = ["../LICENSE", "0"]
+depends = "$auto"
+assets = [
+    [
+        "target/release/zenoh-bridge-lcm",
+        "/usr/bin/",
+        "755",
+    ],
+    [
+        "../DEFAULT_CONFIG.json5",
+        "/etc/zenoh-bridge-lcm/conf.json5",
+        "644",
+    ],
+]
+conf-files = ["/etc/zenoh-bridge-lcm/conf.json5"]

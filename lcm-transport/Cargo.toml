@@ -1,0 +1,15 @@
+[package]
+name = "lcm-transport"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+description = "Pure Rust LCM UDP multicast transport library"
+
+[dependencies]
+socket2 = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

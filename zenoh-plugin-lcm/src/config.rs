@@ -209,4 +209,78 @@ mod tests {
             serde_json::from_str(r#"{"__path__": "/example/path"}"#).unwrap();
         assert!(config.__path__.is_some());
     }
+
+    #[test]
+    fn test_path_field_as_array() {
+        let config: Config =
+            serde_json::from_str(r#"{"__path__": ["/a", "/b"]}"#).unwrap();
+        let paths = config.__path__.unwrap();
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0], "/a");
+    }
+
+    #[test]
+    fn test_invalid_regex_rejected() {
+        let result: Result<Config, _> =
+            serde_json::from_str(r#"{"allow": "[invalid"}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deny_only() {
+        let config: Config =
+            serde_json::from_str(r#"{"deny": "DEBUG_.*"}"#).unwrap();
+        assert!(is_allowed("SENSOR_IMU", &config));
+        assert!(!is_allowed("DEBUG_TEMP", &config));
+    }
+
+    #[test]
+    fn test_allow_only() {
+        let config: Config =
+            serde_json::from_str(r#"{"allow": "SENSOR_.*"}"#).unwrap();
+        assert!(is_allowed("SENSOR_IMU", &config));
+        assert!(!is_allowed("MOTOR_CMD", &config));
+    }
+
+    #[test]
+    fn test_neither_allow_nor_deny() {
+        let config: Config = serde_json::from_str("{}").unwrap();
+        assert!(is_allowed("ANYTHING", &config));
+        assert!(is_allowed("", &config));
+    }
+
+    #[test]
+    fn test_allow_and_deny_overlap() {
+        // Allow SENSOR_.*, deny SENSOR_DEBUG.* — SENSOR_DEBUG_X should be denied.
+        let config: Config =
+            serde_json::from_str(r#"{"allow": "SENSOR_.*", "deny": "SENSOR_DEBUG.*"}"#).unwrap();
+        assert!(is_allowed("SENSOR_IMU", &config));
+        assert!(!is_allowed("SENSOR_DEBUG_X", &config));
+        assert!(!is_allowed("MOTOR_CMD", &config));
+    }
+
+    #[test]
+    fn test_unknown_field_rejected() {
+        let result: Result<Config, _> =
+            serde_json::from_str(r#"{"unknown_field": true}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_custom_thread_settings() {
+        let config: Config =
+            serde_json::from_str(r#"{"work_thread_num": 4, "max_block_thread_num": 100}"#).unwrap();
+        assert_eq!(config.work_thread_num, 4);
+        assert_eq!(config.max_block_thread_num, 100);
+    }
+
+    #[test]
+    fn test_config_serialization_roundtrip() {
+        let config: Config =
+            serde_json::from_str(r#"{"allow": "SENSOR_.*", "deny": "DEBUG_.*"}"#).unwrap();
+        let json = serde_json::to_value(&config).unwrap();
+        // Serialized allow should show the regex pattern, deny likewise.
+        assert_eq!(json["allow"], "SENSOR_.*");
+        assert_eq!(json["deny"], "DEBUG_.*");
+    }
 }

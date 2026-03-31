@@ -110,4 +110,60 @@ mod tests {
         let ke: KeyExpr = "mqtt/SENSOR".try_into().unwrap();
         assert!(key_expr_to_lcm_channel(&ke, "lcm").is_err());
     }
+
+    // --- Reserved character tests ---
+
+    #[test]
+    fn test_channel_with_hash_rejected() {
+        assert!(lcm_channel_to_key_expr("SENSOR#1", "lcm").is_err());
+    }
+
+    #[test]
+    fn test_channel_with_dollar_rejected() {
+        assert!(lcm_channel_to_key_expr("$SENSOR", "lcm").is_err());
+    }
+
+    #[test]
+    fn test_channel_with_all_reserved_rejected() {
+        assert!(lcm_channel_to_key_expr("*#$", "lcm").is_err());
+    }
+
+    // --- Key expression edge cases ---
+
+    #[test]
+    fn test_key_expr_prefix_only_rejected_by_zenoh() {
+        // "lcm/" is not a valid Zenoh key expression (trailing slash forbidden),
+        // so it's impossible to even construct — Zenoh rejects it before we do.
+        let result: Result<KeyExpr, _> = "lcm/".try_into();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_channel_numeric_only() {
+        let ke = lcm_channel_to_key_expr("12345", "lcm").unwrap();
+        assert_eq!(ke.as_str(), "lcm/12345");
+    }
+
+    #[test]
+    fn test_channel_single_char() {
+        let ke = lcm_channel_to_key_expr("A", "lcm").unwrap();
+        assert_eq!(ke.as_str(), "lcm/A");
+    }
+
+    #[test]
+    fn test_channel_deeply_hierarchical() {
+        let ke = lcm_channel_to_key_expr("a/b/c/d/e", "lcm").unwrap();
+        assert_eq!(ke.as_str(), "lcm/a/b/c/d/e");
+
+        // Round-trip.
+        let channel = key_expr_to_lcm_channel(&ke, "lcm").unwrap();
+        assert_eq!(channel, "a/b/c/d/e");
+    }
+
+    #[test]
+    fn test_key_expr_to_channel_prefix_mismatch_partial() {
+        // Key starts with "lcm" but doesn't have the slash separator.
+        let ke: KeyExpr = "lcm_extra/SENSOR".try_into().unwrap();
+        assert!(key_expr_to_lcm_channel(&ke, "lcm").is_err());
+    }
 }

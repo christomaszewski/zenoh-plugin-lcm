@@ -33,6 +33,11 @@ zenoh = { workspace = true }
 zenoh-config = { workspace = true }
 zenoh-plugin-trait = { workspace = true }
 
+[dev-dependencies]
+tokio = { workspace = true }
+lcm-transport = { workspace = true }
+zenoh = { workspace = true }
+
 [build-dependencies]
 rustc_version = { workspace = true }
 

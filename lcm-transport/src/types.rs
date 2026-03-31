@@ -116,4 +116,92 @@ mod tests {
     fn test_parse_invalid_scheme() {
         assert!(LcmUrl::parse("tcp://239.255.76.67:7667").is_err());
     }
+
+    #[test]
+    fn test_parse_empty_url() {
+        assert!(LcmUrl::parse("").is_err());
+    }
+
+    #[test]
+    fn test_parse_scheme_only() {
+        assert!(LcmUrl::parse("udpm://").is_err());
+    }
+
+    #[test]
+    fn test_parse_missing_port() {
+        assert!(LcmUrl::parse("udpm://239.255.76.67").is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_ip() {
+        assert!(LcmUrl::parse("udpm://999.999.999.999:7667").is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_port() {
+        assert!(LcmUrl::parse("udpm://239.255.76.67:99999").is_err());
+    }
+
+    #[test]
+    fn test_parse_non_numeric_port() {
+        assert!(LcmUrl::parse("udpm://239.255.76.67:abc").is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_ttl() {
+        assert!(LcmUrl::parse("udpm://239.255.76.67:7667?ttl=not_a_number").is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_recv_buf_size() {
+        assert!(LcmUrl::parse("udpm://239.255.76.67:7667?recv_buf_size=xyz").is_err());
+    }
+
+    #[test]
+    fn test_parse_high_ttl() {
+        let url = LcmUrl::parse("udpm://239.255.76.67:7667?ttl=255").unwrap();
+        assert_eq!(url.ttl, 255);
+    }
+
+    #[test]
+    fn test_parse_port_zero() {
+        let url = LcmUrl::parse("udpm://239.255.76.67:0").unwrap();
+        assert_eq!(url.port, 0);
+    }
+
+    #[test]
+    fn test_parse_whitespace_trimmed() {
+        let url = LcmUrl::parse("  udpm://239.255.76.67:7667  ").unwrap();
+        assert_eq!(url.port, 7667);
+    }
+
+    #[test]
+    fn test_parse_unknown_param_ignored() {
+        // Unknown params should not cause an error (just a warning log).
+        let url = LcmUrl::parse("udpm://239.255.76.67:7667?ttl=1&unknown=42").unwrap();
+        assert_eq!(url.ttl, 1);
+    }
+
+    #[test]
+    fn test_parse_param_no_value() {
+        // "ttl" without "=value" — split_once('=') returns None, so it's skipped.
+        let url = LcmUrl::parse("udpm://239.255.76.67:7667?ttl").unwrap();
+        assert_eq!(url.ttl, 0); // Default, since param wasn't parsed.
+    }
+
+    #[test]
+    fn test_parse_large_recv_buf_size() {
+        let url =
+            LcmUrl::parse("udpm://239.255.76.67:7667?recv_buf_size=134217728").unwrap();
+        assert_eq!(url.recv_buf_size, Some(134217728)); // 128 MB
+    }
+
+    #[test]
+    fn test_default_url_values() {
+        let url = LcmUrl::default();
+        assert_eq!(url.multicast_group, std::net::Ipv4Addr::new(239, 255, 76, 67));
+        assert_eq!(url.port, 7667);
+        assert_eq!(url.ttl, 0);
+        assert_eq!(url.recv_buf_size, None);
+    }
 }

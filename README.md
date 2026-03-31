@@ -239,10 +239,11 @@ Fragment reassembly features:
 cargo test --workspace
 ```
 
-This runs **30 tests**:
-- **12 unit tests** (`lcm-transport`): wire protocol encoding/decoding, fragment reassembly, URL parsing
+This runs **92 tests**:
+- **49 unit tests** (`lcm-transport`): wire protocol encoding/decoding, fragment reassembly with timeout and error paths, malformed packet handling, URL parsing edge cases
 - **7 integration tests** (`lcm-transport`): real UDP multicast send/receive over loopback, including fragmented messages and multi-transport scenarios
-- **11 unit tests** (`zenoh-plugin-lcm`): configuration parsing, channel/key-expression mapping, allow/deny filtering
+- **33 unit tests** (`zenoh-plugin-lcm`): configuration parsing, channel/key-expression mapping, allow/deny filtering, reserved character rejection, sequence number pruning
+- **3 integration tests** (`zenoh-plugin-lcm`): end-to-end bridge tests with a real Zenoh session — LCM→Zenoh, Zenoh→LCM, and loop prevention
 
 The integration tests use multicast with TTL=0 (localhost only) and unique ports per test, so they work on any system with a loopback interface and require no special privileges.
 

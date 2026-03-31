@@ -246,6 +246,134 @@ mod tests {
     }
 
     #[test]
+    fn test_expire_stale_fragments() {
+        let mut reassembler =
+            FragmentReassembler::new(std::time::Duration::from_millis(50), 4 * 1024 * 1024);
+
+        // Send first fragment only (incomplete set).
+        let data = [1u8, 2, 3];
+        let frag0 = make_fragment(1, 6, 0, 0, 2, Some("TIMEOUT"), &data);
+        assert!(reassembler.process(&frag0, SENDER_A).is_none());
+        assert_eq!(reassembler.pending.len(), 1);
+
+        // Wait for timeout to expire.
+        std::thread::sleep(std::time::Duration::from_millis(80));
+
+        // Next process call triggers expire_stale and cleans up.
+        let frag_new = make_fragment(2, 3, 0, 0, 1, Some("NEW"), &[9, 9, 9]);
+        let msg = reassembler.process(&frag_new, SENDER_A).unwrap();
+        assert_eq!(msg.channel, "NEW");
+
+        // The stale set should have been removed (only the completed one was removed too).
+        assert!(reassembler.pending.is_empty());
+    }
+
+    #[test]
+    fn test_expire_preserves_fresh_fragments() {
+        let mut reassembler =
+            FragmentReassembler::new(std::time::Duration::from_millis(200), 4 * 1024 * 1024);
+
+        // Create two incomplete fragment sets.
+        let frag_a = make_fragment(1, 6, 0, 0, 2, Some("OLD"), &[1, 2, 3]);
+        assert!(reassembler.process(&frag_a, SENDER_A).is_none());
+
+        // Wait so set A is close to expiry.
+        std::thread::sleep(std::time::Duration::from_millis(150));
+
+        // Create a fresh set B.
+        let frag_b = make_fragment(2, 6, 0, 0, 2, Some("FRESH"), &[4, 5, 6]);
+        assert!(reassembler.process(&frag_b, SENDER_A).is_none());
+
+        // Wait until A expires but B is still fresh.
+        std::thread::sleep(std::time::Duration::from_millis(80));
+
+        // Trigger expiry.
+        let frag_trigger = make_fragment(3, 3, 0, 0, 1, Some("X"), &[0]);
+        reassembler.process(&frag_trigger, SENDER_B);
+
+        // Only set B should remain (set A expired, trigger completed).
+        assert_eq!(reassembler.pending.len(), 1);
+        assert!(reassembler.pending.contains_key(&(SENDER_A, 2)));
+    }
+
+    #[test]
+    fn test_inconsistent_metadata_dropped() {
+        let mut reassembler =
+            FragmentReassembler::new(std::time::Duration::from_secs(1), 4 * 1024 * 1024);
+
+        // First fragment establishes metadata.
+        let frag0 = make_fragment(1, 100, 0, 0, 4, Some("CH"), &[1, 2, 3]);
+        assert!(reassembler.process(&frag0, SENDER_A).is_none());
+
+        // Second fragment has different payload_size — should be dropped.
+        let frag1_bad = make_fragment(1, 200, 3, 1, 4, None, &[4, 5, 6]);
+        assert!(reassembler.process(&frag1_bad, SENDER_A).is_none());
+
+        // Second fragment has different n_fragments — should be dropped.
+        let frag1_bad2 = make_fragment(1, 100, 3, 1, 8, None, &[4, 5, 6]);
+        assert!(reassembler.process(&frag1_bad2, SENDER_A).is_none());
+
+        // The fragment set should still exist but with only 1 fragment received.
+        let set = reassembler.pending.get(&(SENDER_A, 1)).unwrap();
+        assert_eq!(set.fragments_received, 1);
+    }
+
+    #[test]
+    fn test_fragment_number_out_of_bounds() {
+        let mut reassembler =
+            FragmentReassembler::new(std::time::Duration::from_secs(1), 4 * 1024 * 1024);
+
+        // First fragment establishes n_fragments=2.
+        let frag0 = make_fragment(1, 6, 0, 0, 2, Some("CH"), &[1, 2, 3]);
+        assert!(reassembler.process(&frag0, SENDER_A).is_none());
+
+        // Fragment with number >= n_fragments should be dropped.
+        let frag_oob = make_fragment(1, 6, 3, 5, 2, None, &[4, 5, 6]);
+        assert!(reassembler.process(&frag_oob, SENDER_A).is_none());
+
+        // Should still have only 1 fragment received.
+        let set = reassembler.pending.get(&(SENDER_A, 1)).unwrap();
+        assert_eq!(set.fragments_received, 1);
+    }
+
+    #[test]
+    fn test_fragment_data_overflow() {
+        let mut reassembler =
+            FragmentReassembler::new(std::time::Duration::from_secs(1), 4 * 1024 * 1024);
+
+        // First fragment establishes payload_size=6 (buffer is 6 bytes).
+        let frag0 = make_fragment(1, 6, 0, 0, 2, Some("CH"), &[1, 2, 3]);
+        assert!(reassembler.process(&frag0, SENDER_A).is_none());
+
+        // Second fragment has offset+len that exceeds the buffer.
+        let frag1_overflow = make_fragment(1, 6, 4, 1, 2, None, &[4, 5, 6, 7, 8]);
+        assert!(reassembler.process(&frag1_overflow, SENDER_A).is_none());
+
+        // Should still have only 1 fragment received.
+        let set = reassembler.pending.get(&(SENDER_A, 1)).unwrap();
+        assert_eq!(set.fragments_received, 1);
+    }
+
+    #[test]
+    fn test_three_fragments_reassembly() {
+        let mut reassembler =
+            FragmentReassembler::new(std::time::Duration::from_secs(1), 4 * 1024 * 1024);
+
+        let frag0 = make_fragment(42, 9, 0, 0, 3, Some("TRI"), &[1, 2, 3]);
+        let frag1 = make_fragment(42, 9, 3, 1, 3, None, &[4, 5, 6]);
+        let frag2 = make_fragment(42, 9, 6, 2, 3, None, &[7, 8, 9]);
+
+        // Receive out of order: 2, 0, 1.
+        assert!(reassembler.process(&frag2, SENDER_A).is_none());
+        assert!(reassembler.process(&frag0, SENDER_A).is_none());
+        let msg = reassembler.process(&frag1, SENDER_A).unwrap();
+
+        assert_eq!(msg.channel, "TRI");
+        assert_eq!(msg.sequence_number, 42);
+        assert_eq!(msg.data, &[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    }
+
+    #[test]
     fn test_different_senders_same_seqno() {
         let mut reassembler =
             FragmentReassembler::new(std::time::Duration::from_secs(1), 4 * 1024 * 1024);

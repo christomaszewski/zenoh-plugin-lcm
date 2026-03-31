@@ -235,7 +235,209 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_empty() {
+        assert!(parse_datagram(&[]).is_none());
+    }
+
+    #[test]
     fn test_parse_unknown_magic() {
         assert!(parse_datagram(&[0, 0, 0, 0, 0, 0, 0, 0]).is_none());
+    }
+
+    // --- Malformed packet tests ---
+
+    #[test]
+    fn test_short_message_no_null_terminator() {
+        // Valid magic + seqno, but channel bytes without a null terminator.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&MAGIC_SHORT.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        buf.extend_from_slice(b"CHAN_NO_NULL");
+        assert!(parse_datagram(&buf).is_none());
+    }
+
+    #[test]
+    fn test_short_message_invalid_utf8_channel() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&MAGIC_SHORT.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        buf.extend_from_slice(&[0xFF, 0xFE, 0x00]); // Invalid UTF-8 + null
+        assert!(parse_datagram(&buf).is_none());
+    }
+
+    #[test]
+    fn test_short_message_header_only() {
+        // Exactly SHORT_HEADER_SIZE bytes — valid header but no channel.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&MAGIC_SHORT.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        // No channel data at all, just header — null terminator can't be found.
+        assert!(parse_datagram(&buf).is_none());
+    }
+
+    #[test]
+    fn test_short_message_empty_data() {
+        // Channel immediately followed by null, then no data.
+        let mut buf = Vec::new();
+        encode_short_message(&mut buf, 0, "CH", &[]);
+        let packet = parse_datagram(&buf).unwrap();
+        match packet {
+            Packet::Short(msg) => {
+                assert_eq!(msg.channel, "CH");
+                assert!(msg.data.is_empty());
+            }
+            _ => panic!("expected short"),
+        }
+    }
+
+    #[test]
+    fn test_fragment_header_truncated() {
+        // Less than FRAGMENT_HEADER_SIZE bytes with fragment magic.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&MAGIC_FRAGMENT.to_be_bytes());
+        buf.extend_from_slice(&[0u8; 10]); // Only 14 bytes total, need 20.
+        assert!(parse_datagram(&buf).is_none());
+    }
+
+    #[test]
+    fn test_fragment_first_no_null_terminator() {
+        // First fragment (frag_num=0) but no null terminator for channel.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&MAGIC_FRAGMENT.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes()); // seqno
+        buf.extend_from_slice(&100u32.to_be_bytes()); // payload_size
+        buf.extend_from_slice(&0u32.to_be_bytes()); // offset
+        buf.extend_from_slice(&0u16.to_be_bytes()); // frag_num = 0
+        buf.extend_from_slice(&2u16.to_be_bytes()); // n_frags
+        buf.extend_from_slice(b"CHAN_NO_NULL");
+        assert!(parse_datagram(&buf).is_none());
+    }
+
+    #[test]
+    fn test_fragment_first_invalid_utf8() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&MAGIC_FRAGMENT.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        buf.extend_from_slice(&100u32.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        buf.extend_from_slice(&0u16.to_be_bytes());
+        buf.extend_from_slice(&2u16.to_be_bytes());
+        buf.extend_from_slice(&[0xFF, 0xFE, 0x00]); // Invalid UTF-8 + null
+        assert!(parse_datagram(&buf).is_none());
+    }
+
+    #[test]
+    fn test_fragment_non_first_no_channel() {
+        // Non-first fragment has no channel field — should parse fine.
+        let mut buf = Vec::new();
+        encode_fragment(&mut buf, 1, 100, 50, 1, 3, None, &[10, 20, 30]);
+        let packet = parse_datagram(&buf).unwrap();
+        match packet {
+            Packet::Fragment(frag) => {
+                assert_eq!(frag.fragment_number, 1);
+                assert!(frag.channel.is_none());
+                assert_eq!(frag.data, &[10, 20, 30]);
+            }
+            _ => panic!("expected fragment"),
+        }
+    }
+
+    // --- Protocol edge case tests ---
+
+    #[test]
+    fn test_short_message_max_sequence_number() {
+        let mut buf = Vec::new();
+        encode_short_message(&mut buf, u32::MAX, "CH", &[1]);
+        let packet = parse_datagram(&buf).unwrap();
+        match packet {
+            Packet::Short(msg) => assert_eq!(msg.sequence_number, u32::MAX),
+            _ => panic!("expected short"),
+        }
+    }
+
+    #[test]
+    fn test_fragment_max_sequence_number() {
+        let mut buf = Vec::new();
+        encode_fragment(&mut buf, u32::MAX, 10, 0, 0, 1, Some("CH"), &[1]);
+        let packet = parse_datagram(&buf).unwrap();
+        match packet {
+            Packet::Fragment(frag) => assert_eq!(frag.sequence_number, u32::MAX),
+            _ => panic!("expected fragment"),
+        }
+    }
+
+    #[test]
+    fn test_short_message_long_channel() {
+        let long_channel: String = "A".repeat(500);
+        let mut buf = Vec::new();
+        encode_short_message(&mut buf, 0, &long_channel, &[1, 2, 3]);
+        let packet = parse_datagram(&buf).unwrap();
+        match packet {
+            Packet::Short(msg) => assert_eq!(msg.channel, long_channel),
+            _ => panic!("expected short"),
+        }
+    }
+
+    #[test]
+    fn test_short_message_large_payload() {
+        let payload: Vec<u8> = (0..10_000).map(|i| (i % 256) as u8).collect();
+        let mut buf = Vec::new();
+        encode_short_message(&mut buf, 7, "BIG", &payload);
+        let packet = parse_datagram(&buf).unwrap();
+        match packet {
+            Packet::Short(msg) => {
+                assert_eq!(msg.data.len(), 10_000);
+                assert_eq!(msg.data, payload.as_slice());
+            }
+            _ => panic!("expected short"),
+        }
+    }
+
+    #[test]
+    fn test_fragment_empty_data() {
+        // Non-first fragment with zero-length data.
+        let mut buf = Vec::new();
+        encode_fragment(&mut buf, 1, 10, 5, 1, 2, None, &[]);
+        let packet = parse_datagram(&buf).unwrap();
+        match packet {
+            Packet::Fragment(frag) => {
+                assert!(frag.data.is_empty());
+                assert_eq!(frag.fragment_offset, 5);
+            }
+            _ => panic!("expected fragment"),
+        }
+    }
+
+    #[test]
+    fn test_fragment_max_values() {
+        let mut buf = Vec::new();
+        encode_fragment(
+            &mut buf,
+            u32::MAX,
+            u32::MAX,
+            u32::MAX,
+            u16::MAX,
+            u16::MAX,
+            None,
+            &[0xFF],
+        );
+        let packet = parse_datagram(&buf).unwrap();
+        match packet {
+            Packet::Fragment(frag) => {
+                assert_eq!(frag.sequence_number, u32::MAX);
+                assert_eq!(frag.payload_size, u32::MAX);
+                assert_eq!(frag.fragment_offset, u32::MAX);
+                assert_eq!(frag.fragment_number, u16::MAX);
+                assert_eq!(frag.n_fragments, u16::MAX);
+            }
+            _ => panic!("expected fragment"),
+        }
+    }
+
+    #[test]
+    fn test_short_magic_with_fragment_size() {
+        // Short message magic but only enough bytes for the magic — no seqno.
+        let buf = MAGIC_SHORT.to_be_bytes().to_vec();
+        assert!(parse_datagram(&buf).is_none());
     }
 }

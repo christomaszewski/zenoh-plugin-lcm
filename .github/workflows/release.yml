@@ -5,6 +5,12 @@ on:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
       - "[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_call:
+    inputs:
+      version:
+        description: "Version/tag to release (e.g. 1.9.0). Must already exist as a git tag."
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -32,8 +38,12 @@ jobs:
             plugin: libzenoh_plugin_lcm.dylib
 
     runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version || github.ref_name }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -60,18 +70,20 @@ jobs:
           cp DEFAULT_CONFIG.json5 dist/
           cp LICENSE dist/
           cd dist
-          tar czf ../zenoh-bridge-lcm-${{ github.ref_name }}-${{ matrix.target }}.tar.gz *
+          tar czf "../zenoh-bridge-lcm-${VERSION}-${{ matrix.target }}.tar.gz" *
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: zenoh-bridge-lcm-${{ matrix.target }}
-          path: zenoh-bridge-lcm-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+          path: zenoh-bridge-lcm-${{ env.VERSION }}-${{ matrix.target }}.tar.gz
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version || github.ref_name }}
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.93.0"
@@ -81,8 +93,12 @@ jobs:
   publish:
     needs: [build, test]
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version || github.ref_name }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -93,24 +109,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Collect all tarballs
           files=$(find artifacts -name '*.tar.gz' -type f)
 
-          gh release create "${{ github.ref_name }}" \
-            --title "zenoh-bridge-lcm ${{ github.ref_name }}" \
+          gh release create "${VERSION}" \
+            --title "zenoh-bridge-lcm ${VERSION}" \
             --generate-notes \
             --notes "$(cat <<EOF
-          ## zenoh-bridge-lcm ${{ github.ref_name }}
+          ## zenoh-bridge-lcm ${VERSION}
 
-          Compatible with **Zenoh ${{ github.ref_name }}**.
+          Compatible with **Zenoh ${VERSION}**.
 
           ### Assets
           | Platform | Architecture | File |
           |----------|-------------|------|
-          | Linux | x86_64 | \`zenoh-bridge-lcm-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz\` |
-          | Linux | aarch64 | \`zenoh-bridge-lcm-${{ github.ref_name }}-aarch64-unknown-linux-gnu.tar.gz\` |
-          | macOS | x86_64 | \`zenoh-bridge-lcm-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz\` |
-          | macOS | aarch64 | \`zenoh-bridge-lcm-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz\` |
+          | Linux | x86_64 | \`zenoh-bridge-lcm-${VERSION}-x86_64-unknown-linux-gnu.tar.gz\` |
+          | Linux | aarch64 | \`zenoh-bridge-lcm-${VERSION}-aarch64-unknown-linux-gnu.tar.gz\` |
+          | macOS | x86_64 | \`zenoh-bridge-lcm-${VERSION}-x86_64-apple-darwin.tar.gz\` |
+          | macOS | aarch64 | \`zenoh-bridge-lcm-${VERSION}-aarch64-apple-darwin.tar.gz\` |
 
           Each archive contains:
           - \`zenoh-bridge-lcm\` — standalone bridge binary

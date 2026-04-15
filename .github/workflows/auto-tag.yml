@@ -1,0 +1,53 @@
+name: Auto-tag on version bump
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tagged: ${{ steps.tag.outputs.tagged }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read workspace version
+        id: version
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | grep -oP '"\K[^"]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Tag if missing
+        id: tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git rev-parse "refs/tags/${VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${VERSION} already exists — skipping."
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${VERSION}" -m "Release ${VERSION}"
+          git push origin "${VERSION}"
+          echo "tagged=true" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.tagged == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.tag.outputs.version }}
+    permissions:
+      contents: write

@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+-*"
 
 permissions:
   contents: write
@@ -95,16 +96,13 @@ jobs:
           # Collect all tarballs
           files=$(find artifacts -name '*.tar.gz' -type f)
 
-          # Extract zenoh version from tag (strip leading 'v')
-          zenoh_version="${GITHUB_REF_NAME#v}"
-
           gh release create "${{ github.ref_name }}" \
             --title "zenoh-bridge-lcm ${{ github.ref_name }}" \
             --generate-notes \
             --notes "$(cat <<EOF
           ## zenoh-bridge-lcm ${{ github.ref_name }}
 
-          Compatible with **Zenoh ${zenoh_version}**.
+          Compatible with **Zenoh ${{ github.ref_name }}**.
 
           ### Assets
           | Platform | Architecture | File |

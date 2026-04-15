@@ -140,10 +140,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           branch="auto/zenoh-${NEW_VERSION}"
+          # If a prior run pushed this branch but failed before opening a PR,
+          # the "existing PR/issue" guard above won't catch it. Since we only
+          # reach this step when no open PR/issue exists for this update,
+          # a stale branch is safe to overwrite.
           git checkout -b "$branch"
           git add -A
           git commit -m "Bump Zenoh dependency from ${OLD_VERSION} to ${NEW_VERSION}"
-          git push -u origin "$branch"
+          # Force push is safe: this branch is only ever written by this workflow,
+          # and we only reach this step when no open PR/issue exists for it.
+          git push -u --force origin "$branch"
 
       - name: Open PR
         if: steps.compare.outputs.up_to_date == 'false' && steps.existing.outputs.exists == 'false' && steps.build.outcome == 'success' && steps.test.outcome == 'success'

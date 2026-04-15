@@ -11,6 +11,12 @@ on:
         description: "Version/tag to release (e.g. 1.9.0). Must already exist as a git tag."
         required: true
         type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version/tag to release (e.g. 1.9.0). Must already exist as a git tag."
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -29,7 +35,7 @@ jobs:
             binary: zenoh-bridge-lcm
             plugin: libzenoh_plugin_lcm.so
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-14
             binary: zenoh-bridge-lcm
             plugin: libzenoh_plugin_lcm.dylib
           - target: aarch64-apple-darwin

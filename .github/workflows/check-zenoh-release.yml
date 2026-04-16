@@ -157,6 +157,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW_VERSION: ${{ steps.latest.outputs.version }}
           OLD_VERSION: ${{ steps.current.outputs.version }}
+          MAINTAINER: ${{ vars.MAINTAINER || 'christomaszewski' }}
         run: |
           branch="auto/zenoh-${NEW_VERSION}"
           gh pr create \
@@ -164,6 +165,8 @@ jobs:
             --head "$branch" \
             --title "Bump Zenoh ${OLD_VERSION} → ${NEW_VERSION}" \
             --label "zenoh-update,automated" \
+            --assignee "$MAINTAINER" \
+            --reviewer "$MAINTAINER" \
             --body "$(cat <<'EOF'
           ## Summary
           A new Zenoh release (**${{ steps.latest.outputs.version }}**) is available. This PR bumps the dependency from **${{ steps.current.outputs.version }}**.
@@ -184,6 +187,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW_VERSION: ${{ steps.latest.outputs.version }}
           OLD_VERSION: ${{ steps.current.outputs.version }}
+          MAINTAINER: ${{ vars.MAINTAINER || 'christomaszewski' }}
         run: |
           if [ "${{ steps.build.outcome }}" = "failure" ]; then
             failed_step="Build"
@@ -196,6 +200,7 @@ jobs:
           gh issue create \
             --title "Zenoh ${NEW_VERSION}: ${failed_step} failed — manual update needed" \
             --label "zenoh-update,automated" \
+            --assignee "$MAINTAINER" \
             --body "$(cat <<EOF
           ## New Zenoh release: ${NEW_VERSION}
 
